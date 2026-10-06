@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info: { title: SALESTORM API (beta), version: 0.1.0 }
+servers: [{ url: https://api.salestorm.example/v1 }]
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+security: [{ bearerAuth: [] }]
+paths:
+  /reservations:
+    post:
+      summary: Reserve a unit of a limited-stock product
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id]
+              properties: { product_id: { type: integer }, qty: { type: integer, default: 1 } }
+      responses:
+        '201': { description: Reserved (reservation_id, expires_at) }
+        '200': { description: Duplicate request - original result returned }
+        '409': { description: SOLD_OUT or ALREADY_RESERVED }
+        '429': { description: Rate limited }
+        '503': { description: Waiting room/queue full, see Retry-After }
+  /checkout:
+    post:
+      summary: Pay for a reservation
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reservation_id, payment_method, token]
+              properties:
+                reservation_id: { type: string, format: uuid }
+                payment_method: { type: string }
+                token: { type: string, description: tokenised card/UPI, never raw card data }
+      responses:
+        '200': { description: Payment captured }
+        '202': { description: Processing (gateway timeout, reconciliation in progress) }
+        '402': { description: Payment failed, reservation released }
+        '410': { description: Reservation expired }
+  /orders/{id}:
+    get:
+      summary: Get order and lifecycle state
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Order }, '404': { description: Not found } }
